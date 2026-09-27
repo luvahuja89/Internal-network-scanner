@@ -1,0 +1,43 @@
+# Python & Bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual Environment
+.venv/
+venv/
+ENV/
+env/
+
+# Scan Outputs & State (Preserve output directory structure via .gitkeep)
+output/*.json
+output/*.csv
+output/*.xlsx
+output/*.html
+output/*.md
+output/*.txt
+output/state/*.json
+output/cron_execution.log
+
+# Operating System Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Environment & Secret Files
+.env
+.env.local
+*.pem
+*.key
+
+# IDE & Editor Configs
+.idea/
+.vscode/
+*.swp
+*.swo

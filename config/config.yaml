@@ -1,0 +1,134 @@
+# Internal Network & Asset Discovery Configuration
+# Controlled & Rate-Limited Scan Policy
+# ==================================================
+
+# 1. Target Network Scope
+# Specify target CIDR ranges or subnets to scan.
+# Use ["auto"] to automatically detect and scan the local network interface.
+targets:
+  - "auto"
+  # Examples of explicit internal subnet ranges:
+  # - "192.168.1.0/24"
+  # - "10.0.0.0/24"
+  # - "172.16.0.0/24"
+
+# IP addresses or ranges to exclude from scans (e.g., sensitive gateways, core switches)
+exclude_ips: []
+  # - "192.168.1.254"
+
+# 2. Scan Profile: "wellknown_os", "fast", "standard", "deep", or "custom"
+# - wellknown_os : (RECOMMENDED & DEFAULT) Curated well-known ports for Windows & Linux machines only.
+#                  Extremely lightweight, safe, and controlled (~35 ports total).
+# - fast         : Top 100 internal ports (includes additional database/devops ports).
+# - standard     : Top 1,000 common ports.
+# - deep         : All 65,535 TCP ports.
+# - custom       : Uses the 'custom_ports' list defined below.
+scan_profile: "wellknown_os"
+
+# Curated Well-Known Windows & Linux Ports (used in 'wellknown_os' profile):
+# Windows: 53, 88 (Kerberos), 135 (RPC), 137-139 (NetBIOS), 389/636 (LDAP), 445 (SMB), 3268/3269 (GC), 3389 (RDP), 5985/5986 (WinRM)
+# Linux  : 22 (SSH), 25 (SMTP), 53 (DNS), 80/443 (HTTP/S), 111 (RPCbind), 123 (NTP), 161 (SNMP), 873 (rsync), 2049 (NFS),
+#          2375/2376 (Docker), 3306 (MySQL), 5432 (Postgres), 6379 (Redis), 6443/10250 (K8s), 8080/8443 (Web/Tomcat), 9090 (Prometheus), 9200 (Elastic), 27017 (Mongo)
+wellknown_os_ports: "22,25,53,80,88,111,123,135,137,138,139,161,389,443,445,636,873,2049,2375,2376,3268,3269,3306,3389,5432,5985,5986,6379,6443,8080,8443,9090,9200,10250,27017"
+
+# Custom port specification (used only when scan_profile is "custom")
+custom_ports: "22,80,443,445,1433,2375,2376,3306,3389,5432,6379,6443,8080,9200,10250"
+
+# 3. Rate Limiting & Network Safety Controls (Prevents Network Choke & Service Downtime)
+rate_limiting:
+  # Maximum packets per second sent across the network (100 pps is gentle on enterprise switches/firewalls while fast)
+  max_packet_rate: 100
+  # Maximum number of parallel probes per host (keeps socket usage low)
+  max_parallelism: 6
+  # Minimum delay between sending probes to the same target (milliseconds)
+  scan_delay_ms: 5
+  # Maximum probe retries for unresponsive ports (prevents retry flooding)
+  max_retries: 1
+  # Max RTT timeout for internal networks (prevents stalls on filtered ports)
+  max_rtt_timeout_ms: 800
+  initial_rtt_timeout_ms: 100
+  # Nmap timing template: T2 (Polite) or T3 (Normal). Never use aggressive T4/T5 in controlled mode.
+  timing_template: "T3"
+  # Maximum number of hosts scanned simultaneously
+  host_concurrency: 6
+  # Delay (in seconds) between scanning successive hosts
+  inter_host_delay_sec: 0.1
+  # Maximum total timeout per host (seconds) — prevents scanner hanging on filtered devices
+  host_timeout_sec: 30
+  # Cooldown period (in minutes) between scans to prevent accidental rapid re-triggers
+  cooldown_minutes: 15
+
+# 4. Discovery Engine Settings (Phase 1)
+discovery:
+  # L2 ARP discovery (safest and fastest for same VLAN / broadcast domain)
+  enable_arp_discovery: true
+  # L3 ICMP echo/timestamp sweep
+  enable_icmp_discovery: true
+  # L4 TCP SYN ping on key OS ports (SSH, HTTP, SMB, RDP)
+  enable_tcp_ping: true
+  tcp_ping_ports: "22,80,135,443,445,3389"
+  # Max discovery packet rate
+  discovery_max_rate: 100
+
+# 5. Service & Resource Inspection (Phase 2)
+inspection:
+  # Enable deep Nmap service version detection (-sV)
+  enable_service_detection: true
+  # Version intensity (1-9, 4-5 is lightweight and safe)
+  version_intensity: 4
+  # Extract TLS/SSL certificate CN/SAN and expiration date
+  extract_tls_certs: true
+  # Fetch HTTP server headers and HTML page titles
+  fetch_http_titles: true
+  # HTTP request timeout (seconds)
+  http_timeout: 2.5
+
+# 6. Reporting & Output Configuration
+reporting:
+  output_dir: "/app/output"
+  generate_excel: true
+  generate_markdown: true
+  generate_csv: true
+  generate_json: true
+  generate_html_dashboard: true
+  # Track state differences (new assets, retired assets, newly opened ports)
+  enable_delta_tracking: true
+  state_dir: "/app/output/state"
+
+# 7. Schedule / Daemon Mode (Optional inside container)
+# Set cron expression for periodic runs:
+# "0 2 1 * *"   = Monthly on the 1st of every month at 2:00 AM (Default)
+# "0 2 * * *"   = Daily at 2:00 AM
+# "0 */6 * * *" = Every 6 hours
+# Leave empty ("") for one-off manual run.
+schedule_cron: "0 2 1 * *"
+
+# 8. AWS S3 Report Synchronization (Optional)
+# Automatically pushes generated Excel (.xlsx), HTML dashboard, Markdown audit report,
+# and CSV inventory directly to an AWS S3 bucket.
+s3_upload:
+  # Enable/disable S3 synchronization (can also be enabled via environment variable)
+  enabled: false
+
+  # AWS S3 Bucket Name (or pass via environment variable S3_BUCKET_NAME)
+  bucket_name: "your-network-reports-bucket"
+
+  # Target AWS Region (e.g. "us-east-1", "eu-west-1", "ap-south-1")
+  region: "us-east-1"
+
+  # S3 Key Prefix / Folder inside the bucket
+  s3_prefix: "network-discovery-reports"
+
+  # Server-Side Encryption: "AES256" (SSE-S3) or "aws:kms" (SSE-KMS)
+  server_side_encryption: "AES256"
+
+  # Optional KMS Key ID / ARN (only needed if server_side_encryption is "aws:kms")
+  kms_key_id: ""
+
+  # S3 Storage Class: "STANDARD", "STANDARD_IA", or "INTELLIGENT_TIERING"
+  storage_class: "STANDARD"
+
+  # AWS IAM Credentials (Leave empty to use IAM Instance Profile / IRSA / Environment Variables):
+  access_key_id: ""
+  secret_access_key: ""
+  session_token: ""
