@@ -11,28 +11,27 @@ services:
     # directly on the host / VPN network interface without Docker bridge NAT.
     network_mode: host
     restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
     environment:
-      # Target Subnets (Leave unset to auto-detect, or provide comma-separated CIDR ranges):
-      # - TARGET_CIDR=192.168.1.0/24,10.0.0.0/24,172.16.0.0/24
+      # Target Subnets (Leave unset to auto-detect, or set in .env / config/config.yaml):
+      - TARGET_CIDR=${TARGET_CIDR:-}
       
-      # Scan Profile: wellknown_os (Recommended ~35 Windows & Linux ports), fast (Top 100), standard (Top 1000)
-      - SCAN_PROFILE=wellknown_os
+      # Scan Profile: wellknown_os (~35 Windows/Linux ports), fast (Top 100), standard (Top 1000)
+      - SCAN_PROFILE=${SCAN_PROFILE:-wellknown_os}
       
       # Packet Rate Limit (packets per second): 100 pps is gentle on enterprise switches while fast
-      - MAX_PACKET_RATE=100
+      - MAX_PACKET_RATE=${MAX_PACKET_RATE:-100}
       
-      # Recurring Cron Schedule:
-      # - "0 2 1 * *"   = Monthly on the 1st of every month at 2:00 AM (Default)
-      # - "0 2 * * *"   = Daily at 2:00 AM
-      # - "0 */6 * * *" = Every 6 hours
-      # - "" (empty)    = One-off run on container startup
-      - CRON_SCHEDULE=0 2 1 * *
+      # Recurring Cron Schedule: Default is Monthly on the 1st at 2:00 AM (0 2 1 * *)
+      - CRON_SCHEDULE=${CRON_SCHEDULE:-0 2 1 * *}
       
-      # AWS S3 Integration (Optional - leave commented if S3 export is not required):
-      # - S3_BUCKET_NAME=your-network-reports-bucket
-      # - AWS_DEFAULT_REGION=us-east-1
-      # - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-      # - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      # AWS S3 Integration (Optional - set in .env or provide via IAM Role):
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME:-}
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-us-east-1}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
     volumes:
       - ./config:/app/config:ro
       - ./output:/app/output:rw

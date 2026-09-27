@@ -26,9 +26,9 @@ class S3ReportUploader:
 
     def __init__(self, config: dict):
         self.s3_cfg = config.get("s3_upload", {})
-        self.enabled = self.s3_cfg.get("enabled", False)
-        # Allow environment variable overrides
+        # Auto-enable if explicitly enabled in config or if S3_BUCKET_NAME env var is provided
         self.bucket_name = (os.environ.get("S3_BUCKET_NAME") or self.s3_cfg.get("bucket_name", "")).strip()
+        self.enabled = self.s3_cfg.get("enabled", False) or bool(os.environ.get("S3_BUCKET_NAME"))
         self.region = os.environ.get("AWS_DEFAULT_REGION") or os.environ.get("AWS_REGION") or self.s3_cfg.get("region", "us-east-1")
         self.prefix = (os.environ.get("S3_PREFIX") or self.s3_cfg.get("s3_prefix", "network-discovery-reports")).strip("/")
         self.sse = self.s3_cfg.get("server_side_encryption", "AES256")
