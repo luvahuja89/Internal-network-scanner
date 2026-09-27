@@ -7,13 +7,14 @@ A lightweight, automated, and **rate-limited Internal Network & Asset Discovery 
 ## 📑 Table of Contents
 
 1. [Key Features](#1-key-features)
-2. [Controlled Scanning & Network Safety Guarantees](#2-controlled-scanning--network-safety-guarantees)
-3. [Well-Known Windows & Linux Port Mapping](#3-well-known-windows--linux-port-mapping)
-4. [Architecture & Discovery Pipeline](#4-architecture--discovery-pipeline)
-5. [Quick Start & Operational Commands](#5-quick-start--operational-commands)
-6. [Monthly Scheduled Cron Daemon](#6-monthly-scheduled-cron-daemon)
-7. [Configuration Reference (`config/config.yaml`)](#7-configuration-reference-configyaml)
-8. [Output Reports & AWS S3 Synchronization](#8-output-reports--aws-s3-synchronization)
+2. [How to Pull, Configure & Deploy in Your Organization](#2-how-to-pull-configure--deploy-in-your-organization)
+3. [Controlled Scanning & Network Safety Guarantees](#3-controlled-scanning--network-safety-guarantees)
+4. [Well-Known Windows & Linux Port Mapping](#4-well-known-windows--linux-port-mapping)
+5. [Architecture & Discovery Pipeline](#5-architecture--discovery-pipeline)
+6. [Operational Management Commands](#6-operational-management-commands)
+7. [Monthly Scheduled Cron Daemon](#7-monthly-scheduled-cron-daemon)
+8. [Configuration Reference (`config/config.yaml`)](#8-configuration-reference-configyaml)
+9. [Output Reports & AWS S3 Synchronization](#9-output-reports--aws-s3-synchronization)
 
 ---
 
@@ -29,7 +30,68 @@ A lightweight, automated, and **rate-limited Internal Network & Asset Discovery 
 
 ---
 
-## 2. Controlled Scanning & Network Safety Guarantees
+## 2. How to Pull, Configure & Deploy in Your Organization
+
+Follow these steps to deploy this scanner within your organization's internal network or jump host:
+
+### Step 1: Clone the Repository to Your Host
+Deploy on a machine / VM / jump host with Docker installed and network routing to your target subnets:
+```bash
+git clone https://github.com/luvahuja89/Internal-network-scanner.git
+cd Internal-network-scanner
+```
+
+### Step 2: Configure Your Organization's Network Scope
+Edit `config/config.yaml` to specify your internal subnets, or leave `"auto"` to scan the local interface:
+```yaml
+# config/config.yaml
+targets:
+  - "192.168.1.0/24"
+  - "10.0.10.0/24"
+  - "172.16.0.0/24"
+  # Or use ["auto"] to detect local interface subnet automatically
+```
+*(Alternatively, you can pass target subnets dynamically in `docker-compose.yml` using `TARGET_CIDR=192.168.1.0/24,10.0.10.0/24`)*
+
+### Step 3: Configure AWS S3 Synchronization (Optional)
+To automatically push reports to your organization's AWS S3 bucket:
+- **Option A (Via `docker-compose.yml` Environment Variables)**:
+  ```yaml
+  environment:
+    - S3_BUCKET_NAME=your-company-scan-reports
+    - AWS_DEFAULT_REGION=us-east-1
+    - AWS_ACCESS_KEY_ID=your-access-key-id
+    - AWS_SECRET_ACCESS_KEY=your-secret-access-key
+  ```
+- **Option B (Via AWS IAM Instance Profile / IRSA)**: If running on AWS EC2 or EKS, attach an IAM Role with `s3:PutObject` and `s3:ListBucket` permissions — no access keys needed!
+
+### Step 4: Build the Docker Image
+```bash
+./run.sh build
+# Or: docker build -t internal-network-scanner:latest .
+```
+
+### Step 5: Deploy & Run
+
+- **Option A: Production Scheduled Daemon (Monthly)**:
+  Runs in the background, executes an initial baseline scan immediately, then triggers monthly on the 1st at 2:00 AM:
+  ```bash
+  ./run.sh start-daemon
+  ./run.sh logs          # Follow real-time logs
+  ```
+- **Option B: One-Off Manual Scan**:
+  Executes a single scan across all configured subnets and outputs reports:
+  ```bash
+  ./run.sh scan
+  ```
+- **Option C: Single Target Subnet**:
+  ```bash
+  ./run.sh scan-cidr 192.168.1.0/24
+  ```
+
+---
+
+## 3. Controlled Scanning & Network Safety Guarantees
 
 To ensure network discovery never causes switch buffer saturation, firewall state exhaustion, or service degradation, the engine enforces strict safety controls:
 
@@ -47,7 +109,7 @@ To ensure network discovery never causes switch buffer saturation, firewall stat
 
 ---
 
-## 3. Well-Known Windows & Linux Port Mapping
+## 4. Well-Known Windows & Linux Port Mapping
 
 The default scan profile (`wellknown_os`) targets only **~35 curated core ports** essential for identifying Windows and Linux infrastructure:
 
@@ -84,7 +146,7 @@ The default scan profile (`wellknown_os`) targets only **~35 curated core ports*
 
 ---
 
-## 4. Architecture & Discovery Pipeline
+## 5. Architecture & Discovery Pipeline
 
 ```
   ┌────────────────────────────────────────────────────────────────────────┐
@@ -126,34 +188,29 @@ The default scan profile (`wellknown_os`) targets only **~35 curated core ports*
 
 ---
 
-## 5. Quick Start & Operational Commands
-
-The project includes an operator script (`run.sh`) for simple management:
+## 6. Operational Management Commands
 
 ```bash
-# 1. Build Docker image
-./run.sh build
-
-# 2. Run one-off scan across configured subnets
-./run.sh scan
-
-# 3. Scan a single subnet (e.g. 192.168.1.0/24)
-./run.sh scan-cidr 192.168.1.0/24
-
-# 4. Start monthly background daemon (with cron)
+# Start monthly scheduled daemon
 ./run.sh start-daemon
 
-# 5. Check live daemon logs
+# View live execution logs
 ./run.sh logs
 
-# 6. Stop or restart daemon
+# Stop or restart daemon
 ./run.sh stop-daemon
 ./run.sh restart-daemon
+
+# Run on-demand scan across configured targets
+./run.sh scan
+
+# Run on-demand scan on specific subnet
+./run.sh scan-cidr 10.0.0.0/24
 ```
 
 ---
 
-## 6. Monthly Scheduled Cron Daemon
+## 7. Monthly Scheduled Cron Daemon
 
 The container is pre-configured to run automatically on a **monthly schedule**:
 
@@ -169,7 +226,7 @@ The container is pre-configured to run automatically on a **monthly schedule**:
 
 ---
 
-## 7. Configuration Reference (`config/config.yaml`)
+## 8. Configuration Reference (`config/config.yaml`)
 
 ```yaml
 # Target Subnets (use "auto" or list of CIDRs)
@@ -207,7 +264,7 @@ s3_upload:
 
 ---
 
-## 8. Output Reports & AWS S3 Synchronization
+## 9. Output Reports & AWS S3 Synchronization
 
 On each scan run, 5 report formats are generated locally in `./output/` and uploaded to **AWS S3** (if enabled):
 

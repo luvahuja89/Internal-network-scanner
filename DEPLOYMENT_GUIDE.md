@@ -1,27 +1,82 @@
 # 🛡️ Production Deployment & Operations Guide
 ## Controlled Internal Network & Asset Discovery Scanner Docker Agent
 
-This guide provides operational instructions for deploying, configuring, and scheduling the **Internal Network Scanner Docker Container** across enterprise internal network segments with optional automated export to **AWS S3**.
+This guide provides complete operational instructions for downloading, configuring, and scheduling the **Internal Network Scanner Docker Container** within any enterprise network segment or jump host with automated export to **AWS S3**.
 
 ---
 
-## 🎯 1. Target Network Scope Configuration
+## 🚀 1. End-to-End Onboarding & Deployment Steps
 
-The scanner can be configured to target any internal network segments (e.g. `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`) or automatically detect the local network interface.
+Follow this 6-step walkthrough to deploy the scanner in your organization:
 
-Target CIDRs can be configured in `config/config.yaml` or passed dynamically via the `TARGET_CIDR` environment variable:
+### Step 1: Download / Clone the Repository
+Clone the repository to a host with Docker installed and network routing to your target internal subnets:
+```bash
+git clone https://github.com/luvahuja89/Internal-network-scanner.git
+cd Internal-network-scanner
+```
 
+### Step 2: Configure Your Target Subnet Ranges
+Open `config/config.yaml` and specify the IP ranges or subnets you wish to discover:
 ```yaml
 # config/config.yaml
 targets:
-  - "auto"             # Auto-detects local interface subnet
-  # - "192.168.1.0/24" # Or specify one or more target subnets
-  # - "10.0.0.0/24"
+  - "192.168.1.0/24"
+  - "10.0.10.0/24"
+  - "172.16.0.0/24"
+  # Or use ["auto"] to automatically detect and scan the local interface
+```
+*Note: You can also pass target subnets dynamically in `docker-compose.yml` using `TARGET_CIDR=192.168.1.0/24,10.0.10.0/24`.*
+
+### Step 3: (Optional) Configure AWS S3 Report Push
+To automatically sync generated Excel, HTML, Markdown, CSV, and JSON reports to an S3 bucket:
+- **In `docker-compose.yml`**:
+  ```yaml
+  environment:
+    - S3_BUCKET_NAME=your-company-scan-reports
+    - AWS_DEFAULT_REGION=us-east-1
+    - AWS_ACCESS_KEY_ID=your-access-key-id
+    - AWS_SECRET_ACCESS_KEY=your-secret-access-key
+  ```
+- **IAM Role on EC2 / EKS (Recommended)**: If running on AWS compute, attach an IAM role with `s3:PutObject` and `s3:ListBucket` permissions — no access keys need to be stored in the configuration!
+
+### Step 4: (Optional) Tune Scan Profile & Rate Limits
+In `config/config.yaml`:
+- **`scan_profile`**:
+  - `wellknown_os` (Recommended): ~35 curated ports for Windows/Linux infrastructure.
+  - `fast`: Top 100 internal ports.
+  - `standard`: Top 1000 ports.
+- **`max_packet_rate`**: Default is `100` packets/second (gentle on switches, uses < 0.1% bandwidth).
+
+### Step 5: Build the Docker Image
+```bash
+./run.sh build
+# Or: docker build -t internal-network-scanner:latest .
+```
+
+### Step 6: Deploy and Run
+
+#### **Mode A: Production Daemon (Monthly Scheduled Monitoring)**
+Runs continuously in the background. Performs an immediate baseline scan on startup, then triggers monthly on the 1st of every month at 2:00 AM (`0 2 1 * *`):
+```bash
+./run.sh start-daemon
+./run.sh logs          # Follow real-time output
+```
+
+#### **Mode B: One-Off Manual Scan**
+Executes a single scan across all configured subnets and generates reports immediately:
+```bash
+./run.sh scan
+```
+
+#### **Mode C: Ad-Hoc Single Subnet Scan**
+```bash
+./run.sh scan-cidr 192.168.1.0/24
 ```
 
 ---
 
-## ⚡ 2. Performance & Network Safety Controls
+## ⚡ 2. Network Safety & Rate Limiting Controls
 
 To scan internal networks safely without causing switch buffer exhaustion, firewall state table saturation, or service disruption, the engine enforces strict rate limiting:
 
@@ -33,115 +88,60 @@ To scan internal networks safely without causing switch buffer exhaustion, firew
 
 ---
 
-## 🚀 3. Quick Start & Deployment Options
+## ⏰ 3. Operational Commands & Daemon Management
 
-### Prerequisites
-1. Docker & Docker Compose installed on the host machine (Linux, macOS, or Windows WSL2).
-2. Network connectivity / routing to the target subnets or VLANs.
-
----
-
-### Option A: Production Scheduled Daemon (Monthly Recurring Monitoring)
-
-Runs the scanner continuously in the background on an automated schedule (default: **Monthly on the 1st of every month at 2:00 AM**). It executes an immediate baseline scan on launch, then schedules recurring monthly runs via cron.
-
-```bash
-# 1. Clone & navigate to the repository
-git clone https://github.com/luvahuja89/internal-network-scanner.git
-cd internal-network-scanner
-
-# 2. Build the Docker image
-./run.sh build
-
-# 3. Start the daemon with Docker Compose
-./run.sh start-daemon
-
-# 4. View real-time logs
-./run.sh logs
-```
-
-To stop or restart the daemon:
-```bash
-# Stop daemon
-./run.sh stop-daemon
-
-# Restart daemon
-./run.sh restart-daemon
-```
+| Action | Command |
+|---|---|
+| **Build Docker Image** | `./run.sh build` |
+| **Start Monthly Daemon** | `./run.sh start-daemon` |
+| **View Live Logs** | `./run.sh logs` or `docker compose logs -f` |
+| **Check Container Status** | `docker ps -f name=internal_asset_scanner` |
+| **Restart Daemon** | `./run.sh restart-daemon` |
+| **Stop Daemon** | `./run.sh stop-daemon` or `docker compose down` |
+| **Run On-Demand Scan** | `./run.sh scan` |
+| **Scan Specific Subnet** | `./run.sh scan-cidr <CIDR>` |
 
 ---
 
-### Option B: One-Off Manual Scan (On-Demand)
+## 📊 4. Verifying Report Outputs
 
-Executes a single complete scan across configured subnets, generates all 5 report formats, optionally pushes them to AWS S3, and exits.
+### Local Verification
+Reports are saved in `./output/`:
+- **`output/inventory_latest.xlsx`**: Multi-sheet Excel with **Executive Summary & Risk Distribution Pie Chart**, Detailed Inventory with filters, and Delta Tracking.
+- **`output/dashboard_latest.html`**: Interactive single-file visual dashboard.
+- **`output/REPORT_latest.md`**: Executive and technical audit summary.
+- **`output/inventory_latest.csv`**: Flat CSV asset inventory for CMDB / SIEM.
+- **`output/inventory_latest.json`**: Machine-readable data catalog.
 
-```bash
-# Run one-off scan via helper
-./run.sh scan
-
-# Or run directly with docker run:
-docker run --rm --net=host \
-  -v "$(pwd)/config:/app/config:ro" \
-  -v "$(pwd)/output:/app/output:rw" \
-  internal-network-scanner:latest -p wellknown_os --force
-```
-
----
-
-### Option C: Ad-Hoc Single Subnet Scan
-
-To scan an individual subnet:
-
-```bash
-./run.sh scan-cidr 192.168.1.0/24
-```
+### Cloud Verification (AWS S3)
+If S3 synchronization is configured, reports are automatically pushed to:
+- **Latest Objects**: `s3://<your-bucket>/network-discovery-reports/latest/`
+- **Historical Objects**: `s3://<your-bucket>/network-discovery-reports/<YYYY-MM-DD>/`
 
 ---
 
-## ⏰ 4. Environment Variables & Configuration
+## 🔒 5. IAM Policy Template for S3 Push (Optional)
 
-All parameters can be tuned in `docker-compose.yml` or passed as environment variables:
+If using AWS IAM credentials or IAM Roles, attach this minimal policy:
 
-| Environment Variable | Default Value | Description |
-|---|---|---|
-| `CRON_SCHEDULE` | `0 2 1 * *` | Cron schedule expression. Examples:<br>• `0 2 1 * *` = **Monthly on 1st at 2:00 AM (Default)**<br>• `0 2 * * *` = Daily at 2:00 AM<br>• `0 */6 * * *` = Every 6 hours<br>• `0 */12 * * *` = Twice a day |
-| `SCAN_PROFILE` | `wellknown_os` | `wellknown_os` (35 ports), `fast` (Top 100), `standard` (Top 1000) |
-| `MAX_PACKET_RATE` | `100` | Max packets/second sent across the network |
-| `TARGET_CIDR` | *(auto)* | Target subnet CIDRs (comma-separated) |
-| `S3_BUCKET_NAME` | *(empty)* | AWS S3 Bucket for report synchronization |
-| `AWS_DEFAULT_REGION` | `us-east-1` | AWS Region |
-| `AWS_ACCESS_KEY_ID` | *(optional)* | AWS Access Key (or use IAM Instance Profile / IRSA) |
-| `AWS_SECRET_ACCESS_KEY` | *(optional)* | AWS Secret Access Key |
-
----
-
-## ☁️ 5. Automated AWS S3 Synchronization & Report Artifacts
-
-On every scan execution, 5 comprehensive report formats are generated locally in `output/` and automatically pushed to S3 (if S3 is configured):
-
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowS3ReportUploads",
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject",
+        "s3:PutObjectAcl",
+        "s3:GetObject",
+        "s3:ListBucket"
+      ],
+      "Resource": [
+        "arn:aws:s3:::your-company-scan-reports",
+        "arn:aws:s3:::your-company-scan-reports/*"
+      ]
+    }
+  ]
+}
 ```
-s3://<your-bucket-name>/network-discovery-reports/
-  ├── latest/
-  │   ├── inventory_latest.xlsx      <-- Multi-sheet styled Excel with Risk Pie Chart & Filters
-  │   ├── dashboard_latest.html      <-- Interactive HTML Dashboard
-  │   ├── REPORT_latest.md           <-- Markdown Executive & Technical Audit
-  │   ├── inventory_latest.csv       <-- Flat CSV Asset Inventory for CMDB / SIEM
-  │   └── inventory_latest.json      <-- Machine-readable JSON Data Catalog
-  └── YYYY-MM-DD/
-      ├── inventory_YYYYMMDD_HHMMSS.xlsx
-      ├── dashboard_YYYYMMDD_HHMMSS.html
-      ├── REPORT_YYYYMMDD_HHMMSS.md
-      ├── inventory_YYYYMMDD_HHMMSS.csv
-      └── inventory_YYYYMMDD_HHMMSS.json
-```
-
----
-
-## 📁 6. Key Project Files Summary
-
-- [Dockerfile](file:///Users/luvahuja/internal_network_discovery/Dockerfile): Production container definition with Nmap, ARP-scan, Python 3.11, cron, and signal handling.
-- [docker-compose.yml](file:///Users/luvahuja/internal_network_discovery/docker-compose.yml): Standard deployment orchestrator for scheduled daemon mode.
-- [entrypoint.sh](file:///Users/luvahuja/internal_network_discovery/entrypoint.sh): Container entrypoint managing environment propagation, crontab configuration, and signal trapping.
-- [run.sh](file:///Users/luvahuja/internal_network_discovery/run.sh): Operator CLI script with commands (`build`, `scan`, `scan-cidr`, `start-daemon`, `stop-daemon`, `logs`).
-- [config/config.yaml](file:///Users/luvahuja/internal_network_discovery/config/config.yaml): Central configuration containing target subnets, safety rate limits, port lists, and S3 settings.
-- [scanner/](file:///Users/luvahuja/internal_network_discovery/scanner/): Core Python modules (discovery, port scanning, OS fingerprinting, security scoring, Excel/HTML/S3 reporting).
